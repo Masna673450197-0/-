@@ -1,0 +1,64 @@
+// ============================================================
+// Prisma Schema: โครงสร้างฐานข้อมูลทั้งหมดของระบบ
+// ใช้ PostgreSQL (เช่น Neon / Supabase) เพื่อให้ deploy บน Vercel ได้
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")   // URL ที่แอปใช้ตอนทำงาน (ใช้ connection pooler ได้)
+  directUrl = env("DIRECT_URL")     // URL ตรง (ไม่ผ่าน pooler) ที่ Prisma ใช้ตอน db push / migrate
+}
+
+// ---------- ผู้ใช้งาน (ใช้กับ NextAuth) ----------
+model User {
+  id           String       @id @default(cuid())
+  name         String
+  email        String       @unique          // อีเมลห้ามซ้ำ
+  passwordHash String                         // เก็บรหัสผ่านที่ hash แล้ว (bcrypt) ไม่เก็บรหัสจริง
+  role         String       @default("USER")  // บทบาท (Authorization): "USER" ผู้ใช้ทั่วไป | "ADMIN" ผู้ดูแลระบบ
+  createdAt    DateTime     @default(now())
+  preferences  Preference[]                   // 1 คนมีได้หลายรายการความรู้สึก
+  diaries      DiaryEntry[]                   // 1 คนมีได้หลายหน้าไดอารี่
+}
+
+// ---------- บันทึกความประทับใจ / ความไม่พึงพอใจ ----------
+// หมายเหตุ: เก็บค่าเป็น String แล้วบังคับให้อยู่ในชุดที่กำหนดด้วย Zod ที่ client + server
+model Preference {
+  id         String    @id @default(cuid())
+  name       String                           // ชื่อบุคคล หรือ ชื่อสิ่งของ/สถานที่/บริการ
+  kind       String                           // "PERSON" (บุคคล) | "THING" (สิ่งของ/สถานที่/บริการ)
+  sentiment  String                           // "LIKED" (ประทับใจ) | "DISLIKED" (ไม่พึงพอใจ)
+  level      Int                              // ระดับความรู้สึก 1-5 (5 = ขั้นสุด/ฝังใจ)
+  reason     String                           // เหตุผลอย่างละเอียด (อย่างน้อย 5 ตัวอักษร)
+  imageUrl      String?                      // URL รูปภาพ (Cloudinary) — ว่างได้
+  imagePublicId String?                      // รหัสรูปบน Cloudinary ใช้ตอนลบรูป
+  status     String    @default("ACTIVE")     // "ACTIVE" (บันทึกไว้) | "RELEASED" (ปล่อยวางแล้ว)
+  releasedAt DateTime?                        // วันที่กดปล่อยวาง (ว่างได้ถ้ายังไม่ปล่อย)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])                // เร่งความเร็วตอน query ของผู้ใช้แต่ละคน
+}
+
+// ---------- ไดอารี่ประจำวัน ----------
+model DiaryEntry {
+  id        String   @id @default(cuid())
+  title     String?                           // หัวข้อ (ไม่บังคับ)
+  content   String                            // เนื้อหาไดอารี่
+  mood      Int      @default(3)              // อารมณ์ของวัน 1-5
+  imageUrl      String?                       // URL รูปภาพ (Cloudinary) — ว่างได้
+  imagePublicId String?                       // รหัสรูปบน Cloudinary ใช้ตอนลบรูป
+  entryDate DateTime                          // วันที่ของไดอารี่ (ผู้ใช้เลือกเองได้)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, entryDate])
+}
